@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+use crate::db::FeedItem;
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
-  #[default]
   Home,
+  #[default]
+  GroupView,
+  FeedList,
+  ViewArticles(Vec<FeedItem>),
 }

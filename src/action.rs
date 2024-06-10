@@ -6,6 +6,11 @@ use serde::{
 };
 use strum::Display;
 
+use crate::{
+  db::{FeedItem, Group},
+  mode::Mode,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Display, Deserialize)]
 pub enum Action {
   Tick,
@@ -14,7 +19,12 @@ pub enum Action {
   Suspend,
   Resume,
   Quit,
-  Refresh,
+  ChangeToFeedView(Group),
+  ModeChange(Mode),
+  RequestRefresh,
+  Refresh(Vec<Group>),
+  RequestUpdateReader(FeedItem),
+  UpdateReader(String),
   Error(String),
   Help,
 }

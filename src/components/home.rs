@@ -7,10 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Component, Frame};
-use crate::{
-  action::Action,
-  config::{Config, KeyBindings},
-};
+use crate::{action::Action, config::Config};
 
 #[derive(Default)]
 pub struct Home {
@@ -37,16 +34,14 @@ impl Component for Home {
 
   fn update(&mut self, action: Action) -> Result<Option<Action>> {
     match action {
-      Action::Tick => {
-      },
+      Action::Tick => {},
       _ => {},
     }
     Ok(None)
   }
 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-    f.render_widget(Paragraph::new("Hello World!"), area);
+    f.render_widget(Block::new().border_set(symbols::border::PLAIN).borders(Borders::ALL).title("Feeds"), area);
     Ok(())
   }
 }
-

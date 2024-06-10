@@ -9,8 +9,15 @@ use crate::{
   tui::{Event, Frame},
 };
 
+pub mod article_list;
+pub mod feed_view;
 pub mod fps;
+pub mod group_view;
 pub mod home;
+pub mod infobar;
+pub mod reader;
+pub mod tab_viewer;
+pub mod tabbar;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 /// Implementors of this trait can be registered with the main application loop and will be able to receive events,
