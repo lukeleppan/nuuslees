@@ -4,11 +4,12 @@ use ratatui::{
   layout::{Constraint, Direction, Layout},
   prelude::Rect,
 };
-use reqwest::Client;
+use reqwest::{Client, Url};
 use rss::Channel;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use readability::extractor;
 
 use crate::{
   action::Action,
@@ -200,15 +201,16 @@ impl App {
           },
           Action::RequestUpdateReader(ref feed_item) => {
             log::info!("Request to update reader");
-            let client = Client::new();
-            let content = client.get(&feed_item.url).send().await?.text().await?;
-            let document = Html::parse_document(&content);
-            let selector = Selector::parse("article, main, body").unwrap();
+            let link = feed_item.url.clone();
+            let result = tokio::task::spawn_blocking(move || {
+              extractor::scrape(&link)
+            }).await?;
 
-            if let Some(element) = document.select(&selector).next() {
-              action_tx.send(Action::UpdateReader(element.html()))?;
-            } else {
-              action_tx.send(Action::UpdateReader(content))?;
+            match result {
+              Ok(product) => {
+                action_tx.send(Action::UpdateReader(product.content))?;
+              }
+              Err(_) => log::error!("Failed to display post."),
             }
           },
           _ => {},

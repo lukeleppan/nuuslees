@@ -26,13 +26,16 @@ crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
 derive_deref = "1.1.1"
 directories = "5.0.1"
 futures = "0.3.28"
+html5ever = "0.27.0"
 human-panic = "2.0.0"
 json5 = "0.4.1"
 lazy_static = "1.4.0"
 libc = "0.2.148"
 log = "0.4.20"
+markup5ever_rcdom = "0.3.0"
 pretty_assertions = "1.4.0"
 ratatui = { version = "0.26.0", features = ["serde", "macros"] }
+readability = "0.3.0"
 reqwest = { version = "0.12.4", features = ["native-tls-vendored"] }
 rss = "2.0.8"
 rusqlite = { version = "0.31", features = ["bundled", "chrono"] }
