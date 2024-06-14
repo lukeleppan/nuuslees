@@ -25,6 +25,8 @@ pub struct AppConfig {
 pub struct Config {
   #[serde(default, flatten)]
   pub config: AppConfig,
+  #[serde(default = "default_as_true")]
+  pub confirm_quit: bool,
   #[serde(default)]
   pub groups: Vec<GroupConfig>,
 }
@@ -67,4 +69,8 @@ pub struct FeedConfig {
   pub name: Option<String>,
   pub desc: Option<String>,
   pub link: String,
+}
+
+const fn default_as_true() -> bool {
+  true
 }

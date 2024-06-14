@@ -116,69 +116,99 @@ impl Database {
       for group in &config.groups {
         let new_group = Group { id: 0, name: group.name.clone(), desc: group.desc.clone() };
         log::info!("{:?}", new_group);
-        match self.add_group(new_group) {
-          Ok(group_id) => {
-            for feed in &group.feeds {
-              log::info!("{:?}", feed);
-              let content = client.get(&feed.link).send().await?.text().await?;
-              let channel = rss::Channel::read_from(content.as_bytes())?;
-
-              let new_feed = Feed {
-                id: 0, // Placeholder
-                group_id,
-                name: feed.name.clone().unwrap_or(channel.title().to_string()),
-                desc: feed.desc.clone().unwrap_or(channel.description().to_string()),
-                url: feed.link.clone(),
-                updated_at: Utc::now(),
-              };
-
-              log::info!("{:?}", new_feed);
-
-              if let Ok(feed_id) = self.add_feed(new_feed) {
-                for item in channel.items() {
-                  log::info!("{:?}", item);
-                  let content = "".to_string();
-                  // if let Some(link) = item.link() {
-                  //   content = client.get(link).send().await?.text().await?;
-                  // } else {
-                  //   content = "".to_string();
-                  // }
-
-                  log::info!("{:?}", content);
-                  let feed_item = FeedItem {
-                    id: 0,
-                    feed_id,
-                    title: item.title().unwrap_or_default().to_string(),
-                    url: item.link().unwrap_or_default().to_string(),
-                    desc: item.description().unwrap_or_default().to_string(),
-                    content,
-                    read: false,
-                    pub_date: (item.pub_date().unwrap_or_default())
-                      .parse::<chrono::DateTime<Utc>>()
-                      .unwrap_or(Utc::now()),
-                  };
-
-                  self.add_feed_item(feed_item)?;
-                }
-              } else {
-                log::info!("Failed");
-              }
-            }
-          },
+        let group_id = match self.upsert_group(new_group) {
+          Ok(id) => id,
           Err(error) => {
-            log::info!("{:?}", error);
+            log::error!("Failed to upsert group: {:?}", error);
+            continue;
           },
+        };
+
+        for feed in &group.feeds {
+          log::info!("{:?}", feed);
+          let content = client.get(&feed.link).send().await?.text().await?;
+          let channel = rss::Channel::read_from(content.as_bytes())?;
+
+          let new_feed = Feed {
+            id: 0, // Placeholder
+            group_id,
+            name: feed.name.clone().unwrap_or(channel.title().to_string()),
+            desc: feed.desc.clone().unwrap_or(channel.description().to_string()),
+            url: feed.link.clone(),
+            updated_at: Utc::now(),
+          };
+
+          log::info!("{:?}", new_feed);
+
+          let feed_id = match self.upsert_feed(new_feed) {
+            Ok(id) => id,
+            Err(error) => {
+              log::error!("Failed to upsert feed: {:?}", error);
+              continue;
+            },
+          };
+
+          for item in channel.items() {
+            log::info!("{:?}", item);
+            let content = "".to_string();
+
+            log::info!("{:?}", content);
+            let feed_item = FeedItem {
+              id: 0,
+              feed_id,
+              title: item.title().unwrap_or_default().to_string(),
+              url: item.link().unwrap_or_default().to_string(),
+              desc: item.description().unwrap_or_default().to_string(),
+              content,
+              read: false,
+              pub_date: item.pub_date().unwrap_or_default().parse::<chrono::DateTime<Utc>>().unwrap_or(Utc::now()),
+            };
+
+            match self.upsert_feed_item(feed_item) {
+              Ok(_) => (),
+              Err(error) => log::error!("Failed to upsert feed item: {:?}", error),
+            }
+          }
         }
       }
     } else {
-      log::info!("Failed to get config");
+      log::error!("Failed to get config");
     }
     Ok(())
   }
 
-  pub fn add_group(&self, group: Group) -> Result<i32, DbError> {
-    log::info!("Group: {}, {}", group.name, group.desc);
-    self.conn.execute("INSERT INTO groups (name, desc) VALUES (?1, ?2)", rusqlite::params![group.name, group.desc])?;
+  pub fn upsert_group(&self, group: Group) -> Result<i32, DbError> {
+    self.conn.execute(
+      "INSERT INTO groups (name, desc) VALUES (?1, ?2)
+            ON CONFLICT(name) DO UPDATE SET desc=excluded.desc",
+      rusqlite::params![group.name, group.desc],
+    )?;
+    Ok(self.conn.last_insert_rowid() as i32)
+  }
+
+  pub fn upsert_feed(&self, feed: Feed) -> Result<i32, DbError> {
+    self.conn.execute(
+      "INSERT INTO feeds (group_id, name, desc, url, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(url) DO UPDATE SET name=excluded.name, desc=excluded.desc, updated_at=excluded.updated_at",
+      rusqlite::params![feed.group_id, feed.name, feed.desc, feed.url, feed.updated_at.to_rfc3339()],
+    )?;
+    Ok(self.conn.last_insert_rowid() as i32)
+  }
+
+  pub fn upsert_feed_item(&self, feed_item: FeedItem) -> Result<i32, DbError> {
+    self.conn.execute(
+      "INSERT INTO feed_items (feed_id, title, url, desc, content, read, pub_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            ON CONFLICT(url) DO UPDATE SET title=excluded.title, desc=excluded.desc, content=excluded.content, read=excluded.read, pub_date=excluded.pub_date",
+      rusqlite::params![
+                feed_item.feed_id,
+                feed_item.title,
+                feed_item.url,
+                feed_item.desc,
+                feed_item.content,
+                feed_item.read as i32,
+                feed_item.pub_date.to_rfc3339()
+            ],
+    )?;
     Ok(self.conn.last_insert_rowid() as i32)
   }
 
@@ -199,32 +229,8 @@ impl Database {
     if let Some(row) = rows.next()? {
       Ok(row.get(0)?)
     } else {
-      let new_group = Group { id: 0, name: group_name.to_string(), desc: "".to_string() };
-      self.add_group(new_group)
+      Ok(-1)
     }
-  }
-
-  pub fn add_feed(&self, feed: Feed) -> Result<i32, DbError> {
-    self.conn.execute(
-      "INSERT INTO feeds (group_id, name, desc, url, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-      rusqlite::params![feed.group_id, feed.name, feed.desc, feed.url, feed.updated_at.to_rfc3339()],
-    )?;
-    Ok(self.conn.last_insert_rowid() as i32)
-  }
-
-  pub fn add_feed_item(&self, feed_item: FeedItem) -> Result<i32, DbError> {
-    self.conn.execute(
-      "INSERT INTO feed_items (feed_id, title, url, desc, read, pub_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-      rusqlite::params![
-        feed_item.feed_id,
-        feed_item.title,
-        feed_item.url,
-        feed_item.desc,
-        feed_item.read as i32,
-        feed_item.pub_date.to_rfc3339()
-      ],
-    )?;
-    Ok(self.conn.last_insert_rowid() as i32)
   }
 
   pub fn get_feeds(&self) -> Result<Vec<Feed>, DbError> {

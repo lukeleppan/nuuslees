@@ -1,13 +1,11 @@
-use std::{fmt, string::ToString};
-
 use serde::{
-  de::{self, Deserializer, Visitor},
+  de::{Deserializer, Visitor},
   Deserialize, Serialize,
 };
 use strum::Display;
 
 use crate::{
-  db::{FeedItem, Group},
+  db::{Feed, FeedItem, Group},
   mode::Mode,
 };
 
@@ -18,13 +16,18 @@ pub enum Action {
   Resize(u16, u16),
   Suspend,
   Resume,
+  ConfirmQuit,
   Quit,
-  ChangeToFeedView(Group),
-  ModeChange(Mode),
   RequestRefresh,
   Refresh(Vec<Group>),
+  ModeChange(Mode),
+  ChangeToFeedList(Group),
+  ChangeToFeedView(Group),
+  ChangeToFeedViewSingle(Feed),
   RequestUpdateReader(FeedItem),
   UpdateReader(String),
+  ActivateReader,
+  ActivateFeedList,
   Error(String),
   Help,
 }

@@ -3,20 +3,12 @@ use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::{
   layout::{Margin, Rect},
   prelude::{Color, Line, Modifier, Style, Text},
-  symbols::scrollbar::Set,
   widgets::{Block, Borders, List, ListItem, ListState, Scrollbar, ScrollbarOrientation, ScrollbarState},
-  Frame,
 };
-use reqwest::Client;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::Component;
-use crate::{
-  action::Action,
-  config::Config,
-  db::{Database, DbError, FeedItem, Group},
-  mode::Mode,
-};
+use crate::{action::Action, config::Config, db::FeedItem, mode::Mode};
 
 #[derive(Default)]
 pub struct ArticleList {
@@ -28,6 +20,7 @@ pub struct ArticleList {
   state: ListState,
   scrollbar_state: ScrollbarState,
   vertical_scroll: usize,
+  active: bool,
 }
 
 impl ArticleList {
@@ -41,6 +34,7 @@ impl ArticleList {
       state: ListState::default().with_selected(Some(0)),
       scrollbar_state: ScrollbarState::default(),
       vertical_scroll: 0,
+      active: true,
     }
   }
 }
@@ -57,53 +51,58 @@ impl Component for ArticleList {
   }
 
   fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-    if let Some(feed_items) = &self.feed_items {
-      let selected_idx = self.state.selected().unwrap_or(0);
-      match key.code {
-        KeyCode::Char('j') | KeyCode::Down => {
-          self.state.select(Some((selected_idx + 1) % feed_items.len()));
-        },
-        KeyCode::Char('k') | KeyCode::Up => {
-          if selected_idx == 0 {
-            self.state.select(Some(feed_items.len() - 1));
-          } else {
-            self.state.select(Some(selected_idx - 1));
-          }
-        },
-        KeyCode::Char('l') | KeyCode::Enter => {
-          if let Some(tx) = &self.command_tx {
-            let selected_idx = self.state.selected().unwrap();
-            let selected_item = feed_items.get(selected_idx).unwrap().clone();
-            tx.send(Action::RequestUpdateReader(selected_item))?;
-          }
-        },
-        _ => {},
+    if self.active {
+      if let Some(feed_items) = &self.feed_items {
+        let selected_idx = self.state.selected().unwrap_or(0);
+        match key.code {
+          KeyCode::Char('j') | KeyCode::Down => {
+            self.state.select(Some((selected_idx + 1) % feed_items.len()));
+          },
+          KeyCode::Char('k') | KeyCode::Up => {
+            if selected_idx == 0 {
+              self.state.select(Some(feed_items.len() - 1));
+            } else {
+              self.state.select(Some(selected_idx - 1));
+            }
+          },
+          KeyCode::Char('l') | KeyCode::Enter => {
+            if let Some(tx) = &self.command_tx {
+              let selected_idx = self.state.selected().unwrap();
+              let selected_item = feed_items.get(selected_idx).unwrap().clone();
+              tx.send(Action::RequestUpdateReader(selected_item))?;
+              tx.send(Action::ActivateReader)?;
+            }
+          },
+          _ => {},
+        }
       }
     }
     Ok(None)
   }
 
   fn handle_mouse_events(&mut self, mouse: MouseEvent) -> Result<Option<Action>> {
-    match self.mode {
-      Mode::ViewArticles(_) => {
-        if let Some(feed_items) = &self.feed_items {
-          let selected_idx = self.state.selected().unwrap_or(0);
-          match mouse.kind {
-            MouseEventKind::ScrollUp => {
-              self.state.select(Some((selected_idx + 1) % feed_items.len()));
-            },
-            MouseEventKind::ScrollDown => {
-              if selected_idx == 0 {
-                self.state.select(Some(feed_items.len() - 1));
-              } else {
-                self.state.select(Some(selected_idx - 1));
-              }
-            },
-            _ => {},
+    if self.active {
+      match self.mode {
+        Mode::ViewArticles(_) => {
+          if let Some(feed_items) = &self.feed_items {
+            let selected_idx = self.state.selected().unwrap_or(0);
+            match mouse.kind {
+              MouseEventKind::ScrollUp => {
+                self.state.select(Some((selected_idx + 1) % feed_items.len()));
+              },
+              MouseEventKind::ScrollDown => {
+                if selected_idx == 0 {
+                  self.state.select(Some(feed_items.len() - 1));
+                } else {
+                  self.state.select(Some(selected_idx - 1));
+                }
+              },
+              _ => {},
+            }
           }
-        }
-      },
-      _ => {},
+        },
+        _ => {},
+      }
     }
     Ok(None)
   }
@@ -120,6 +119,14 @@ impl Component for ArticleList {
           },
           _ => {},
         }
+      },
+      Action::ActivateFeedList => {
+        self.state.select(Some(0));
+        self.active = true;
+      },
+      Action::ActivateReader => {
+        self.state.select(None);
+        self.active = false;
       },
       _ => {},
     }
@@ -167,7 +174,7 @@ impl Component for ArticleList {
         .track_symbol(None)
         .thumb_symbol("▌");
 
-      self.scrollbar_state = ScrollbarState::new(list.len()).position(self.state.selected().unwrap());
+      self.scrollbar_state = ScrollbarState::new(list.len()).position(self.state.selected().unwrap_or(0));
 
       f.render_stateful_widget(list, area, &mut self.state);
       f.render_stateful_widget(

@@ -4,9 +4,9 @@ use crate::db::FeedItem;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
-  Home,
   #[default]
   GroupView,
   FeedList,
   ViewArticles(Vec<FeedItem>),
+  Refreshing,
 }
