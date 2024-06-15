@@ -2,33 +2,40 @@ use std::default::Default;
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
-use html5ever::{parse_document, ParseOpts, tendril::TendrilSink, tree_builder::TreeBuilderOpts};
+use html5ever::{parse_document, tendril::TendrilSink, tree_builder::TreeBuilderOpts, ParseOpts};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use ratatui::{
-  Frame,
   layout::Rect,
   style::{Color, Modifier, Style},
   text::{Line, Span, Text},
   widgets::{Block, Paragraph, Wrap},
+  Frame,
 };
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::Component;
 use crate::action::Action;
 
-use super::Component;
-
 #[derive(Default)]
-pub struct Reader<'a> {
+pub struct ArticleReader<'a> {
   command_tx: Option<UnboundedSender<Action>>,
+  idx: usize,
   content: Option<String>,
   scroll_position: (u16, u16),
   text: Option<Text<'a>>,
   active: bool,
 }
 
-impl<'a> Reader<'a> {
-  pub fn new() -> Self {
-    Self { command_tx: None, content: None, scroll_position: (0, 0), text: None, active: false }
+impl<'a> ArticleReader<'a> {
+  pub fn new(idx: usize) -> Self {
+    Self {
+      command_tx: None,
+      idx,
+      content: None,
+      scroll_position: (0, 0),
+      text: None,
+      active: false,
+    }
   }
 
   pub fn set_content(&mut self, content: String) {
@@ -36,8 +43,10 @@ impl<'a> Reader<'a> {
   }
 
   pub fn build_text(&mut self) {
-    let opts =
-      ParseOpts { tree_builder: TreeBuilderOpts { drop_doctype: true, ..Default::default() }, ..Default::default() };
+    let opts = ParseOpts {
+      tree_builder: TreeBuilderOpts { drop_doctype: true, ..Default::default() },
+      ..Default::default()
+    };
 
     let dom = parse_document(RcDom::default(), opts)
       .from_utf8()
@@ -59,11 +68,11 @@ impl<'a> Reader<'a> {
         for child in handle.children.borrow().iter() {
           self.walk_dom_recursive(child, text, spans);
         }
-      }
+      },
       NodeData::Text { contents } => {
         let content = contents.borrow();
         spans.push(Span::raw(content.to_string()));
-      }
+      },
       NodeData::Element { name, .. } => {
         let tag_name = name.local.as_ref();
 
@@ -84,7 +93,7 @@ impl<'a> Reader<'a> {
               spans.clear();
             }
             text.lines.push(Line::from(vec![])); // Add an empty line
-          }
+          },
           "h1" | "h2" | "h3" => {
             for child in handle.children.borrow().iter() {
               let mut heading_spans = vec![];
@@ -94,7 +103,7 @@ impl<'a> Reader<'a> {
               }
               spans.extend(heading_spans);
             }
-          }
+          },
           "a" => {
             for child in handle.children.borrow().iter() {
               let mut link_spans = vec![];
@@ -104,20 +113,20 @@ impl<'a> Reader<'a> {
               }
               spans.extend(link_spans);
             }
-          }
+          },
           _ => {
             for child in handle.children.borrow().iter() {
               self.walk_dom_recursive(child, text, spans);
             }
-          }
+          },
         }
-      }
-      _ => {}
+      },
+      _ => {},
     }
   }
 }
 
-impl Component for Reader<'_> {
+impl Component for ArticleReader<'_> {
   fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
     self.command_tx = Some(tx);
     Ok(())
@@ -130,17 +139,17 @@ impl Component for Reader<'_> {
           if self.scroll_position.0 > 0 {
             self.scroll_position.0 = self.scroll_position.0 - 1;
           }
-        }
+        },
         KeyCode::Char('j') => {
           self.scroll_position.0 = self.scroll_position.0 + 1;
-        }
+        },
         KeyCode::Char('h') => {
           if let Some(tx) = &self.command_tx {
             tx.send(Action::ActivateFeedList)?;
             self.active = false;
           }
-        }
-        _ => {}
+        },
+        _ => {},
       }
     }
     Ok(None)
@@ -153,11 +162,11 @@ impl Component for Reader<'_> {
           if self.scroll_position.0 > 0 {
             self.scroll_position.0 = self.scroll_position.0 - 1;
           }
-        }
+        },
         MouseEventKind::ScrollDown => {
           self.scroll_position.0 = self.scroll_position.0 + 1;
-        }
-        _ => {}
+        },
+        _ => {},
       }
     }
     Ok(None)
@@ -165,18 +174,20 @@ impl Component for Reader<'_> {
 
   fn update(&mut self, action: Action) -> Result<Option<Action>> {
     match action {
-      Action::UpdateReader(content) => {
-        self.content = Some(content);
-        self.build_text();
-        self.scroll_position = (0, 0);
-      }
+      Action::UpdateReader(idx, content) => {
+        if self.idx == idx {
+          self.content = Some(content);
+          self.build_text();
+          self.scroll_position = (0, 0);
+        }
+      },
       Action::ActivateFeedList => {
         self.active = false;
-      }
+      },
       Action::ActivateReader => {
         self.active = true;
-      }
-      _ => {}
+      },
+      _ => {},
     }
     Ok(None)
   }

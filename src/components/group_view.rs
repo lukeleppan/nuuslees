@@ -1,3 +1,4 @@
+use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::{
   layout::Rect,
@@ -7,12 +8,15 @@ use ratatui::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{action::Action, components::Component, config::Config, db::Group, mode::Mode, tui::Frame};
+use super::Component;
+use crate::{action::Action, config::Config, db::Group, mode::Mode, tui::Frame};
 
 pub struct GroupView {
   command_tx: Option<UnboundedSender<Action>>,
   config: Config,
   mode: Mode,
+  idx: usize,
+  selected_idx: usize,
   groups: Vec<Group>,
   state: ListState,
 }
@@ -23,6 +27,8 @@ impl GroupView {
       command_tx: None,
       config: Config::default(),
       mode: Mode::default(),
+      idx: 0,
+      selected_idx: 0,
       groups: Vec::new(),
       state: ListState::default().with_selected(Some(0)),
     }
@@ -41,24 +47,28 @@ impl Component for GroupView {
   }
 
   fn handle_key_events(&mut self, key: KeyEvent) -> color_eyre::Result<Option<Action>> {
-    if self.mode == Mode::GroupView {
-      let selected_idx = self.state.selected().unwrap_or(0);
+    if self.selected_idx == self.idx {
+      let selected_item_idx = self.state.selected().unwrap_or(0);
       match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
-          self.state.select(Some((selected_idx + 1) % self.groups.len()));
+          self.state.select(Some((selected_item_idx + 1) % self.groups.len()));
         },
         KeyCode::Char('k') | KeyCode::Up => {
-          if selected_idx == 0 {
+          if selected_item_idx == 0 {
             self.state.select(Some(self.groups.len() - 1));
           } else {
-            self.state.select(Some(selected_idx - 1));
+            self.state.select(Some(selected_item_idx - 1));
           }
         },
         KeyCode::Char('l') | KeyCode::Enter => {
           if let Some(tx) = &self.command_tx {
             let selected_idx = self.state.selected().unwrap();
             let selected_group = self.groups.get(selected_idx).unwrap().clone();
-            tx.send(Action::ChangeToFeedView(selected_group))?;
+            if selected_group.id == -1 {
+              tx.send(Action::NewTabArticleViewAll)?;
+            } else {
+              tx.send(Action::NewTabFeedView(selected_group))?;
+            }
           }
         },
         _ => {},
@@ -68,22 +78,19 @@ impl Component for GroupView {
   }
 
   fn handle_mouse_events(&mut self, mouse: MouseEvent) -> color_eyre::Result<Option<Action>> {
-    log::info!("Mouse Event: {:?}", mouse);
-    if self.mode == Mode::GroupView {
-      let selected_idx = self.state.selected().unwrap_or(0);
-      match mouse.kind {
-        MouseEventKind::ScrollUp => {
-          self.state.select(Some((selected_idx + 1) % self.groups.len()));
-        },
-        MouseEventKind::ScrollDown => {
-          if selected_idx == 0 {
-            self.state.select(Some(self.groups.len() - 1));
-          } else {
-            self.state.select(Some(selected_idx - 1));
-          }
-        },
-        _ => {},
-      }
+    let selected_idx = self.state.selected().unwrap_or(0);
+    match mouse.kind {
+      MouseEventKind::ScrollUp => {
+        self.state.select(Some((selected_idx + 1) % self.groups.len()));
+      },
+      MouseEventKind::ScrollDown => {
+        if selected_idx == 0 {
+          self.state.select(Some(self.groups.len() - 1));
+        } else {
+          self.state.select(Some(selected_idx - 1));
+        }
+      },
+      _ => {},
     }
     Ok(None)
   }
@@ -91,9 +98,10 @@ impl Component for GroupView {
   fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
     match action {
       Action::Refresh(groups) => {
-        log::info!("Refreshing groups!");
-        log::info!("Groups: {:?}", groups);
         self.groups = groups;
+      },
+      Action::ChangeTab(idx) => {
+        self.selected_idx = idx;
       },
       Action::ModeChange(mode) => {
         self.mode = mode;

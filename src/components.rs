@@ -10,13 +10,14 @@ use crate::{
 };
 
 pub mod article_list;
+pub mod article_reader;
+pub mod article_view;
 pub mod feed_view;
 pub mod group_view;
 pub mod info_bar;
-pub mod quit_popup;
-pub mod reader;
-pub mod tab_viewer;
+pub mod popup_quit;
 pub mod tab_bar;
+pub mod tab_viewer;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 /// Implementors of this trait can be registered with the main application loop and will be able to receive events,
@@ -32,10 +33,7 @@ pub trait Component {
   ///
   /// * `Result<()>` - An Ok result or an error.
   #[allow(unused_variables)]
-  fn register_action_handler(
-    &mut self,
-    tx: UnboundedSender<Action>,
-  ) -> Result<()> {
+  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
     Ok(())
   }
   /// Register a configuration handler that provides configuration settings if necessary.
@@ -75,9 +73,7 @@ pub trait Component {
   fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
     let r = match event {
       Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-      Some(Event::Mouse(mouse_event)) => {
-        self.handle_mouse_events(mouse_event)?
-      },
+      Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
       _ => None,
     };
     Ok(r)
@@ -105,10 +101,7 @@ pub trait Component {
   ///
   /// * `Result<Option<Action>>` - An action to be processed or none.
   #[allow(unused_variables)]
-  fn handle_mouse_events(
-    &mut self,
-    mouse: MouseEvent,
-  ) -> Result<Option<Action>> {
+  fn handle_mouse_events(&mut self, mouse: MouseEvent) -> Result<Option<Action>> {
     Ok(None)
   }
   /// Update the state of the component based on a received action. (REQUIRED)

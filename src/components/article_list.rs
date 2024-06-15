@@ -3,18 +3,21 @@ use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::{
   layout::{Margin, Rect},
   prelude::{Color, Line, Modifier, Style, Text},
-  widgets::{Block, Borders, List, ListItem, ListState, Scrollbar, ScrollbarOrientation, ScrollbarState},
+  widgets::{
+    Block, Borders, List, ListItem, ListState, Scrollbar, ScrollbarOrientation, ScrollbarState,
+  },
 };
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::Component;
-use crate::{action::Action, config::Config, db::FeedItem, mode::Mode};
+use crate::{action::Action, app, config::Config, db::FeedItem, mode::Mode};
 
 #[derive(Default)]
 pub struct ArticleList {
   command_tx: Option<UnboundedSender<Action>>,
   config: Config,
   mode: Mode,
+  idx: usize,
   feed_items: Option<Vec<FeedItem>>,
   selected: usize,
   state: ListState,
@@ -24,11 +27,12 @@ pub struct ArticleList {
 }
 
 impl ArticleList {
-  pub fn new() -> Self {
+  pub fn new(idx: usize) -> Self {
     Self {
       command_tx: None,
       config: Config::default(),
       mode: Mode::default(),
+      idx,
       feed_items: None,
       selected: 0,
       state: ListState::default().with_selected(Some(0)),
@@ -36,6 +40,10 @@ impl ArticleList {
       vertical_scroll: 0,
       active: true,
     }
+  }
+
+  pub fn set_feed_items(&mut self, feed_items: Vec<FeedItem>) {
+    self.feed_items = Some(feed_items);
   }
 }
 
@@ -69,7 +77,7 @@ impl Component for ArticleList {
             if let Some(tx) = &self.command_tx {
               let selected_idx = self.state.selected().unwrap();
               let selected_item = feed_items.get(selected_idx).unwrap().clone();
-              tx.send(Action::RequestUpdateReader(selected_item))?;
+              tx.send(Action::RequestUpdateReader(self.idx, selected_item))?;
               tx.send(Action::ActivateReader)?;
             }
           },
@@ -174,7 +182,8 @@ impl Component for ArticleList {
         .track_symbol(None)
         .thumb_symbol("▌");
 
-      self.scrollbar_state = ScrollbarState::new(list.len()).position(self.state.selected().unwrap_or(0));
+      self.scrollbar_state =
+        ScrollbarState::new(list.len()).position(self.state.selected().unwrap_or(0));
 
       f.render_stateful_widget(list, area, &mut self.state);
       f.render_stateful_widget(

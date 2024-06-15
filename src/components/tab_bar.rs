@@ -9,24 +9,32 @@ use super::Component;
 
 #[derive(Default)]
 pub struct TabBar {
-  pub tabs: Vec<String>,
+  tabs: Vec<String>,
+  selected_tab: usize,
 }
 
 impl TabBar {
   pub fn new() -> Self {
-    Self { tabs: vec!["Welcome".to_string()] }
+    Self { tabs: Vec::new(), selected_tab: 0 }
+  }
+
+  pub fn add_tab(&mut self, tab: String) {
+    self.tabs.push(tab);
+  }
+
+  pub fn remove_tab(&mut self, tab_idx: usize) {
+    self.tabs.remove(tab_idx);
+  }
+
+  pub fn select(&mut self, tab_idx: usize) {
+    self.selected_tab = tab_idx;
   }
 }
 
 impl Component for TabBar {
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-    let tab_area = Layout::default()
-      .direction(Direction::Vertical)
-      .constraints([Constraint::Length(1), Constraint::Fill(1)])
-      .split(area)[0];
-
-    let tabs = Tabs::new(self.tabs.clone());
-    f.render_widget(tabs, tab_area);
+    let tabs = Tabs::new(self.tabs.clone()).select(self.selected_tab);
+    f.render_widget(tabs, area);
     Ok(())
   }
 }

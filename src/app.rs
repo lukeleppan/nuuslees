@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use color_eyre::eyre::Result;
 use crossterm::event::KeyEvent;
 use ratatui::{
@@ -14,9 +16,8 @@ use tokio::sync::mpsc;
 use crate::{
   action::Action,
   components::{
-    article_list::ArticleList, feed_view::FeedView, info_bar::InfoBar,
-    quit_popup::QuitPopup, reader::Reader, tab_bar::TabBar,
-    tab_viewer::TabViewer, Component,
+    article_list::ArticleList, article_reader::ArticleReader, article_view::ArticleView,
+    info_bar::InfoBar, popup_quit::QuitPopup, tab_bar::TabBar, tab_viewer::TabViewer, Component,
   },
   config::Config,
   db::{Database, DbError},
@@ -48,20 +49,12 @@ impl App {
     let tabbar = TabBar::new();
     let infobar = InfoBar::new();
     let tab_viewer = TabViewer::new();
-    let feed_list = ArticleList::new();
-    let feed_reader = Reader::new();
-    let feed_viewer = FeedView::new(feed_list, feed_reader);
     let quit_popup = QuitPopup::new();
-    let mode = Mode::GroupView;
+    let mode = Mode::Main;
     Ok(Self {
       tick_rate,
       frame_rate,
-      components: vec![
-        Box::new(tabbar),
-        Box::new(tab_viewer),
-        Box::new(infobar),
-        Box::new(quit_popup),
-      ],
+      components: vec![Box::new(tab_viewer), Box::new(infobar), Box::new(quit_popup)],
       should_quit: false,
       should_suspend: false,
       config,
@@ -75,10 +68,8 @@ impl App {
   pub async fn run(&mut self) -> Result<()> {
     let (action_tx, mut action_rx) = mpsc::unbounded_channel();
 
-    let mut tui = tui::Tui::new()?
-      .tick_rate(self.tick_rate)
-      .frame_rate(self.frame_rate)
-      .mouse(true);
+    let mut tui =
+      tui::Tui::new()?.tick_rate(self.tick_rate).frame_rate(self.frame_rate).mouse(true);
     tui.enter()?;
 
     for component in self.components.iter_mut() {
@@ -94,7 +85,6 @@ impl App {
     }
 
     let groups = self.db.get_groups()?;
-    log::info!("{:?}", groups);
     action_tx.send(Action::Refresh(groups))?;
 
     loop {
@@ -136,9 +126,7 @@ impl App {
               for component in self.components.iter_mut() {
                 let r = component.draw(f, f.size());
                 if let Err(e) = r {
-                  action_tx
-                    .send(Action::Error(format!("Failed to draw: {:?}", e)))
-                    .unwrap();
+                  action_tx.send(Action::Error(format!("Failed to draw: {:?}", e))).unwrap();
                 }
               }
             })?;
@@ -148,31 +136,36 @@ impl App {
               for component in self.components.iter_mut() {
                 let r = component.draw(f, f.size());
                 if let Err(e) = r {
-                  action_tx
-                    .send(Action::Error(format!("Failed to draw: {:?}", e)))
-                    .unwrap();
+                  action_tx.send(Action::Error(format!("Failed to draw: {:?}", e))).unwrap();
                 }
               }
             })?;
           },
-          Action::ChangeToFeedView(ref group) => {
+          Action::RequestUpdateFeedView(idx, ref group) => {
+            let feeds = self.db.get_feeds_from_group(group.id)?;
+            action_tx.send(Action::UpdateFeedView(idx, feeds))?;
+          },
+          Action::RequestUpdateArticleViewAll(idx) => {
+            let feed_items = self.db.get_feed_items()?;
+            action_tx.send(Action::UpdateArticleView(idx, feed_items))?;
+          },
+          Action::RequestUpdateArticleViewFeed(idx, ref feed) => {
+            let feed_items = self.db.get_feed_items_from_feed(feed.id)?;
+            log::info!("Sending UpdateArticleViewFeed");
+            action_tx.send(Action::UpdateArticleView(idx, feed_items))?;
+          },
+          Action::RequestUpdateArticleViewGroup(idx, ref group) => {
             let feed_items = self.db.get_feed_items_from_group(group.id)?;
-            self.mode = Mode::ViewArticles(feed_items);
-            action_tx.send(Action::ModeChange(self.mode.clone()))?;
+            action_tx.send(Action::UpdateArticleView(idx, feed_items))?;
           },
-          Action::Refresh(_) => {
-            log::info!("Sending REFRESH!!!");
-          },
-          Action::RequestUpdateReader(ref feed_item) => {
-            log::info!("Request to update reader");
+          Action::Refresh(_) => {},
+          Action::RequestUpdateReader(idx, ref feed_item) => {
             let link = feed_item.url.clone();
-            let result =
-              tokio::task::spawn_blocking(move || extractor::scrape(&link))
-                .await?;
+            let result = tokio::task::spawn_blocking(move || extractor::scrape(&link)).await?;
 
             match result {
               Ok(product) => {
-                action_tx.send(Action::UpdateReader(product.content))?;
+                action_tx.send(Action::UpdateReader(idx, product.content))?;
               },
               Err(_) => log::error!("Failed to display post."),
             }
@@ -188,9 +181,7 @@ impl App {
       if self.should_suspend {
         tui.suspend()?;
         action_tx.send(Action::Resume)?;
-        tui = tui::Tui::new()?
-          .tick_rate(self.tick_rate)
-          .frame_rate(self.frame_rate);
+        tui = tui::Tui::new()?.tick_rate(self.tick_rate).frame_rate(self.frame_rate);
         // tui.mouse(true);
         tui.enter()?;
       } else if self.should_quit {
